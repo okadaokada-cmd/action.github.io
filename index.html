@@ -12,13 +12,13 @@
             --bg-color: #FFF5F5;
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; /* iOS向けフォント指定 */
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
             background-color: var(--bg-color);
             color: #444;
             text-align: center;
             margin: 0; padding: 0;
             overflow-x: hidden;
-            -webkit-touch-callout: none; /* iOS長押しメニュー抑制 */
+            -webkit-touch-callout: none;
             user-select: none;
         }
         h1 { margin: 10px 0; font-size: 1.2rem; color: #FF6F61; }
@@ -37,7 +37,7 @@
             z-index: 10; box-shadow: 0 0 4px red; opacity: 0.7;
         }
 
-        /* 独自モーダル（alertの代わり） */
+        /* 独自モーダル */
         #custom-modal {
             display: none;
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -52,11 +52,13 @@
 
         /* バトルエリア */
         #battle-ui { display: none; }
-        .battle-field { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px; height: 180px; background: #fff; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
+        .battle-field { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px; height: 190px; background: #fff; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
         
         .monster-card { width: 45%; text-align: center; transition: all 0.3s; }
         .monster-emoji { font-size: 3.5rem; display: block; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.2)); }
         .monster-name { font-weight: bold; font-size: 0.8rem; margin-top: 5px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .monster-id { font-size: 0.6rem; color: #888; display: block; letter-spacing: -0.5px; } /* バーコードID表示 */
+        
         .hp-bar-container { width: 100%; height: 8px; background: #ddd; border-radius: 4px; margin-top: 5px; overflow: hidden; }
         .hp-bar { height: 100%; width: 100%; transition: width 0.5s; }
         
@@ -69,7 +71,7 @@
             background: #fff; border: 2px solid #eee; 
             border-radius: 10px; padding: 10px; text-align: left; font-size: 0.85rem; 
             margin-bottom: 10px;
-            -webkit-overflow-scrolling: touch; /* iOSスクロール滑らかに */
+            -webkit-overflow-scrolling: touch; 
         }
         .log-line { margin-bottom: 4px; border-bottom: 1px dashed #eee; padding-bottom: 2px; }
         
@@ -85,6 +87,8 @@
         }
         button:active { transform: translateY(2px); box-shadow: 0 2px 3px rgba(0,0,0,0.1); }
         button:disabled { background: #ccc; box-shadow: none; }
+        
+        .sub-btn { background: #888; font-size: 0.8rem; padding: 8px 16px; margin-top: 5px; }
 
         .damage-anim { animation: shake 0.5s; }
         .attack-anim { animation: lunge 0.3s; }
@@ -104,7 +108,7 @@
         </div>
         <p style="font-size:0.8rem; color:#888;">
             バーコードを赤い線に合わせてください。<br>
-            ※iPhoneは少し離すと読みやすいです
+            ※同じバーコードからは必ず同じ魔物が生まれます
         </p>
     </div>
 
@@ -113,6 +117,7 @@
             <h2 style="margin-top:0; color:#FF6F61;">GET!</h2>
             <div id="modal-emoji" style="font-size:4rem;"></div>
             <div id="modal-text" style="font-weight:bold; margin:10px 0;"></div>
+            <div id="modal-subtext" style="font-size:0.8rem; color:#888;"></div>
             <button onclick="closeModal()">次へ</button>
         </div>
     </div>
@@ -122,11 +127,13 @@
         <div class="battle-field">
             <div class="monster-card player" id="p-card">
                 <span class="monster-name" id="p-name">Monster</span>
+                <span class="monster-id" id="p-id">No.---</span>
                 <div class="hp-bar-container"><div class="hp-bar" id="p-hp-bar"></div></div>
                 <span class="monster-emoji" id="p-emoji">🐣</span>
             </div>
             <div class="monster-card enemy" id="e-card">
                 <span class="monster-name" id="e-name">Monster</span>
+                <span class="monster-id" id="e-id">No.CPU</span>
                 <div class="hp-bar-container"><div class="hp-bar" id="e-hp-bar"></div></div>
                 <span class="monster-emoji" id="e-emoji">👾</span>
             </div>
@@ -134,13 +141,16 @@
         <div class="bench" id="player-bench"></div>
         <div id="log-box"></div>
         <button id="next-btn" onclick="nextTurn()" style="display:none;">攻撃！</button>
+        <div id="result-area" style="display:none;">
+            <button class="sub-btn" onclick="resetGame()">タイトルへ戻る</button>
+        </div>
     </div>
     
     <div id="start-screen">
         <p>身の回りのバーコードをスキャンして<br>最強のチームを作ろう！</p>
         <button onclick="startScanning()">カメラを起動してスタート</button>
         <br><br>
-        <button onclick="debugMode()" style="background:#888; font-size:0.8rem;">(カメラなしでテストプレイ)</button>
+        <button onclick="debugMode()" class="sub-btn">(カメラなしでテストプレイ)</button>
     </div>
 </div>
 
@@ -157,7 +167,7 @@ let eIndex = 0;
 let scanCount = 0;
 let isProcessing = false;
 
-// === ユーティリティ ===
+// === ユーティリティ: バーコードの数字から必ず同じ乱数シードを作る ===
 function hashString(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -167,6 +177,7 @@ function hashString(str) {
     return Math.abs(hash);
 }
 
+// 決定論的乱数生成器 (同じシードなら必ず同じ結果を出す)
 class Random {
     constructor(seed) { this.seed = seed; }
     next() {
@@ -181,6 +192,9 @@ class Random {
 function generateMonster(barcodeData) {
     const seed = hashString(String(barcodeData));
     const rng = new Random(seed);
+    
+    // この時点で rng の結果は毎回固定されるため、
+    // 同じバーコードなら必ず同じ名前・強さになります。
     
     const type = rng.next() > 0.5 ? '物理' : '特殊';
     const emoji = rng.pick(EMOJIS);
@@ -208,11 +222,11 @@ function generateMonster(barcodeData) {
         name, emoji, hp, maxHp: hp,
         kp, kd, mp, md, sp,
         type, skillName,
-        id: barcodeData
+        id: barcodeData // バーコードの数字そのもの
     };
 }
 
-// === バーコードスキャン処理 (iPhone対応版) ===
+// === バーコードスキャン処理 ===
 function startScanning() {
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('scan-ui').style.display = 'block';
@@ -223,15 +237,13 @@ function startScanning() {
             type : "LiveStream",
             target: document.querySelector('#camera-area'),
             constraints: {
-                facingMode: "environment", // 背面カメラ
-                width: 480, // iPhoneでは解像度を少し落としたほうが安定する
+                facingMode: "environment",
+                width: 480,
                 height: 320
             }
         },
-        decoder : {
-            readers : ["ean_reader", "ean_8_reader"]
-        },
-        locate: true // 読み取り精度向上
+        decoder : { readers : ["ean_reader", "ean_8_reader"] },
+        locate: true
     }, function(err) {
         if (err) {
             console.log(err);
@@ -249,7 +261,6 @@ function startScanning() {
 
         const alreadyScanned = playerTeam.some(m => m.id === code);
         if (alreadyScanned) {
-            // 既に登録済みなら少し待ってから再度検知可能にする
             isProcessing = true;
             document.getElementById('camera-area').style.border = "4px solid orange";
             setTimeout(() => { 
@@ -259,11 +270,9 @@ function startScanning() {
             return;
         }
 
-        // --- 読み取り成功 ---
+        // 成功時の処理
         isProcessing = true;
         document.getElementById('camera-area').style.border = "4px solid #00FF00";
-        
-        // モンスター生成してモーダル表示
         addMonsterToTeam(code);
     });
 }
@@ -274,9 +283,9 @@ function addMonsterToTeam(data) {
     scanCount++;
     document.getElementById('scan-count').innerText = scanCount;
 
-    // alertの代わりにモーダルを表示
     document.getElementById('modal-emoji').innerText = monster.emoji;
     document.getElementById('modal-text').innerHTML = `${monster.name}<br>HP:${monster.hp} / ${monster.type}`;
+    document.getElementById('modal-subtext').innerText = `No.${data}`;
     document.getElementById('custom-modal').style.display = 'flex';
 }
 
@@ -288,21 +297,16 @@ function closeModal() {
         Quagga.stop();
         initBattle();
     } else {
-        // iPhone対策: 明示的にビデオを再生し直す
         const video = document.querySelector('video');
         if (video) video.play();
         isProcessing = false;
     }
 }
 
-// デバッグモード
 function debugMode() {
-    addMonsterToTeam("4901234567890"); 
-    closeModal(); // モーダルを閉じる処理もシミュレート
-    addMonsterToTeam("4501234567891");
-    closeModal();
-    addMonsterToTeam("4909999999999");
-    closeModal();
+    addMonsterToTeam("4901234567890"); closeModal();
+    addMonsterToTeam("4501234567891"); closeModal();
+    addMonsterToTeam("4909999999999"); closeModal();
 }
 
 // === バトルロジック ===
@@ -310,6 +314,7 @@ function initBattle() {
     document.getElementById('scan-ui').style.display = 'none';
     document.getElementById('battle-ui').style.display = 'block';
     
+    // 敵チームは毎回ランダム（飽きないように）
     for(let i=0; i<3; i++) {
         enemyTeam.push(generateMonster("enemy" + i + Math.random()));
     }
@@ -319,6 +324,26 @@ function initBattle() {
     log("バトル開始！");
     log(`相手は ${enemyTeam[0].name} などを繰り出してきた！`);
     document.getElementById('next-btn').style.display = 'inline-block';
+    document.getElementById('next-btn').disabled = false;
+    document.getElementById('result-area').style.display = 'none';
+}
+
+function resetGame() {
+    // リセット処理
+    playerTeam = [];
+    enemyTeam = [];
+    pIndex = 0;
+    eIndex = 0;
+    scanCount = 0;
+    isProcessing = false;
+    document.getElementById('log-box').innerHTML = "";
+    document.getElementById('scan-count').innerText = "0";
+    
+    // 画面切り替え
+    document.getElementById('battle-ui').style.display = 'none';
+    document.getElementById('start-screen').style.display = 'block';
+    
+    // Quaggaはstopしているので、startScanning()で再初期化される
 }
 
 function updateBenchUI() {
@@ -339,10 +364,12 @@ function updateBattleUI() {
     const em = enemyTeam[eIndex];
     
     document.getElementById('p-name').innerText = pm.name;
+    document.getElementById('p-id').innerText = `No.${pm.id}`; // ID表示
     document.getElementById('p-emoji').innerText = pm.emoji;
     document.getElementById('p-hp-bar').style.width = (pm.hp / pm.maxHp * 100) + "%";
     
     document.getElementById('e-name').innerText = em.name;
+    document.getElementById('e-id').innerText = "CPU"; // ID表示
     document.getElementById('e-emoji').innerText = em.emoji;
     document.getElementById('e-hp-bar').style.width = (em.hp / em.maxHp * 100) + "%";
 }
@@ -357,7 +384,7 @@ function calcDamage(attacker, defender) {
     let damage = 0;
     if (attacker.type === '物理') {
         let base = (attacker.kp * 0.8) - (defender.kd * 0.2);
-        damage = Math.floor(base + (Math.random() * 10));
+        damage = Math.floor(base + (Math.random() * 10)); // ダメージ幅はランダム
     } else {
         let base = (attacker.mp * 0.8) - (defender.md * 0.2);
         damage = Math.floor(base + (Math.random() * 10));
@@ -371,9 +398,13 @@ function nextTurn() {
     
     if (pIndex >= 3 || eIndex >= 3) return;
 
+    // 交代処理
     if (pm.hp <= 0) {
         pIndex++;
-        if (pIndex >= 3) { log("<b>あなたの負け...</b>"); document.getElementById('next-btn').disabled = true; return; }
+        if (pIndex >= 3) { 
+            endGame("あなたの負け..."); 
+            return; 
+        }
         log(`ゆけっ！ ${playerTeam[pIndex].name}！`);
         updateBattleUI();
         updateBenchUI();
@@ -381,13 +412,17 @@ function nextTurn() {
     }
     if (em.hp <= 0) {
         eIndex++;
-        if (eIndex >= 3) { log("<b>あなたの勝ち！</b>"); document.getElementById('next-btn').disabled = true; return; }
+        if (eIndex >= 3) { 
+            endGame("あなたの勝ち！"); 
+            return; 
+        }
         log(`相手は ${enemyTeam[eIndex].name} を繰り出した！`);
         updateBattleUI();
         updateBenchUI();
         return;
     }
 
+    // 攻撃処理
     let first = pm.sp >= em.sp ? pm : em;
     let second = pm.sp >= em.sp ? em : pm;
     let isPlayerFirst = pm === first;
@@ -399,6 +434,13 @@ function nextTurn() {
             attack(second, first, !isPlayerFirst);
         }, 1000);
     }
+}
+
+function endGame(msg) {
+    log(`<b>${msg}</b>`);
+    document.getElementById('next-btn').disabled = true;
+    document.getElementById('next-btn').style.display = 'none';
+    document.getElementById('result-area').style.display = 'block';
 }
 
 function attack(atk, def, isPlayerAtk) {
