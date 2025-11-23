@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Monster Battle</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <style>
+        :root {
+            --p-color: #FF9AA2; /* Player Color */
+            --e-color: #85E3FF; /* Enemy Color */
+            --bg-color: #FFF5F5;
+        }
+        body {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: #444;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+        h1 { margin: 10px 0; font-size: 1.2rem; color: #FF6F61; }
+        
+        /* レイアウト */
+        #game-container { max-width: 600px; margin: 0 auto; padding: 10px; }
+        
+        /* カメラエリア */
+        #scan-ui { display: none; }
+        #canvas-container { position: relative; margin: 10px auto; width: 300px; height: 300px; background: #000; border-radius: 10px; overflow: hidden; }
+        canvas { width: 100%; height: 100%; }
+        #scan-instruction { margin-bottom: 10px; font-weight: bold; }
+
+        /* バトルエリア */
+        #battle-ui { display: none; }
+        .battle-field { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px; height: 200px; background: #fff; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
+        
+        .monster-card { width: 45%; text-align: center; transition: all 0.3s; }
+        .monster-emoji { font-size: 4rem; display: block; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.2)); }
+        .monster-name { font-weight: bold; font-size: 0.9rem; margin-top: 5px; display: block; }
+        .hp-bar-container { width: 100%; height: 10px; background: #ddd; border-radius: 5px; margin-top: 5px; overflow: hidden; }
+        .hp-bar { height: 100%; width: 100%; transition: width 0.5s; }
+        
+        /* プレイヤー側 */
+        .player .hp-bar { background: var(--p-color); }
+        .player .monster-emoji { transform: scaleX(-1); } /* プレイヤーは右向き */
+
+        /* 敵側 */
+        .enemy .hp-bar { background: var(--e-color); }
+        
+        /* ステータス表示 */
+        .stats-box { font-size: 0.8rem; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 5px; margin-top: 5px; display: none; }
+
+        /* メッセージログ */
+        #log-box { 
+            height: 150px; overflow-y: scroll; 
+            background: #fff; border: 2px solid #eee; 
+            border-radius: 10px; padding: 10px; text-align: left; font-size: 0.9rem; 
+            margin-bottom: 10px;
+        }
+        .log-line { margin-bottom: 4px; border-bottom: 1px dashed #eee; padding-bottom: 2px; }
+        
+        /* 控えモンスター */
+        .bench { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+        .bench-icon { font-size: 1.5rem; opacity: 0.5; }
+        .bench-icon.alive { opacity: 1; }
+        .bench-icon.dead { opacity: 0.2; filter: grayscale(100%); }
+
+        button {
+            background: #FF6F61; color: white; border: none; padding: 10px 20px;
+            font-size: 1rem; border-radius: 20px; cursor: pointer; margin-top: 10px;
+        }
+        button:disabled { background: #ccc; }
+
+        /* アニメーション */
+        .damage-anim { animation: shake 0.5s; }
+        .attack-anim { animation: lunge 0.3s; }
+        @keyframes shake { 0% { transform: translateX(0); } 25% { transform: translateX(5px); } 75% { transform: translateX(-5px); } 100% { transform: translateX(0); } }
+        @keyframes lunge { 0% { transform: translateX(0); } 50% { transform: translateX(20px); } 100% { transform: translateX(0); } }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h1>QR Monster Battle</h1>
+
+    <div id="scan-ui">
+        <div id="scan-instruction">モンスターをスキャン中... (<span id="scan-count">0</span>/3)</div>
+        <div id="canvas-container">
+            <canvas id="qr-canvas"></canvas>
+        </div>
+        <p style="font-size:0.8rem; color:#888;">カメラにQRコードをかざしてください。<br>バーコードも読み取れる場合があります。</p>
+    </div>
+
+    <div id="battle-ui">
+        <div class="bench" id="enemy-bench"></div>
+        
+        <div class="battle-field">
+            <div class="monster-card player" id="p-card">
+                <span class="monster-name" id="p-name">Monster</span>
+                <div class="hp-bar-container"><div class="hp-bar" id="p-hp-bar"></div></div>
+                <span class="monster-emoji" id="p-emoji">🐣</span>
+                <div class="stats-box" id="p-stats"></div>
+            </div>
+            <div class="monster-card enemy" id="e-card">
+                <span class="monster-name" id="e-name">Monster</span>
+                <div class="hp-bar-container"><div class="hp-bar" id="e-hp-bar"></div></div>
+                <span class="monster-emoji" id="e-emoji">👾</span>
+                <div class="stats-box" id="e-stats"></div>
+            </div>
+        </div>
+
+        <div class="bench" id="player-bench"></div>
+
+        <div id="log-box"></div>
+
+        <button id="next-btn" onclick="nextTurn()" style="display:none;">次へ</button>
+    </div>
+    
+    <div id="start-screen">
+        <p>QRコードから可愛いモンスターを召喚して<br>3vs3のバトルをしよう！</p>
+        <button onclick="startScanning()">カメラを起動してスタート</button>
+        <br><br>
+        <button onclick="debugMode()" style="background:#888; font-size:0.8rem;">(カメラなしでテストプレイ)</button>
+    </div>
+</div>
+
+<script>
+// === ゲームデータと設定 ===
+const EMOJIS = ['🐲', '👻', '🧚', '🤖', '🐣', '🐱', '🦊', '🦄', '🦋', '🐢', '🐙', '🌵', '🍄'];
+const PREFIXES = ['プニ', 'モコ', 'ピコ', 'ドラ', 'メガ', 'ウル', 'ハピ', 'ダーク', 'メカ', 'フワ'];
+const SUFFIXES = ['モン', 'ちゃん', 'ゴン', 'ピー', 'タ', 'ロ', 'ナ', 'マン', 'キング'];
+
+let playerTeam = [];
+let enemyTeam = [];
+let pIndex = 0;
+let eIndex = 0;
+let scanCount = 0;
+let isScanning = false;
+let video = document.createElement("video");
+let canvasElement = document.getElementById("qr-canvas");
+let canvas = canvasElement.getContext("2d");
+
+// === ユーティリティ: 文字列から数値を生成 ===
+function hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0; 
+    }
+    return Math.abs(hash);
+}
+
+// 乱数生成器 (シード付き)
+class Random {
+    constructor(seed) { this.seed = seed; }
+    next() {
+        this.seed = (this.seed * 9301 + 49297) % 233280;
+        return this.seed / 233280;
+    }
+    range(min, max) { return Math.floor(this.next() * (max - min + 1)) + min; }
+    pick(arr) { return arr[Math.floor(this.next() * arr.length)]; }
+}
+
+// === モンスター生成 ===
+function generateMonster(qrData) {
+    const seed = hashString(qrData);
+    const rng = new Random(seed);
+    
+    const type = rng.next() > 0.5 ? '物理' : '特殊';
+    const emoji = rng.pick(EMOJIS);
+    const name = rng.pick(PREFIXES) + rng.pick(SUFFIXES);
+    
+    // ステータス生成 (合計値をある程度一定にするが個性を出す)
+    const hp = rng.range(80, 150);
+    let kp, kd, mp, md, sp;
+    
+    if (type === '物理') {
+        kp = rng.range(40, 80); mp = rng.range(10, 30);
+        kd = rng.range(30, 60); md = rng.range(20, 50);
+        skill = "たいあたり";
+    } else {
+        kp = rng.range(10, 30); mp = rng.range(40, 80);
+        kd = rng.range(20, 50); md = rng.range(30, 60);
+        skill = "ビーム";
+    }
+    sp = rng.range(30, 90);
+
+    // 技名ランダム化
+    const physSkills = ["パンチ", "キック", "頭突き", "スラッシュ"];
+    const specSkills = ["ファイア", "サンダー", "ビーム", "念力"];
+    const skillName = type === '物理' ? rng.pick(physSkills) : rng.pick(specSkills);
+
+    return {
+        name, emoji, hp, maxHp: hp,
+        kp, kd, mp, md, sp,
+        type, skillName,
+        id: qrData // デバッグ用
+    };
+}
+
+// === スキャン処理 ===
+function startScanning() {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('scan-ui').style.display = 'block';
+    isScanning = true;
+    
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
+        video.srcObject = stream;
+        video.setAttribute("playsinline", true); 
+        video.play();
+        requestAnimationFrame(tick);
+    });
+}
+
+function tick() {
+    if (!isScanning) return;
+    
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvasElement.height = video.videoHeight;
+        canvasElement.width = video.videoWidth;
+        canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+        
+        var imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+        var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+        
+        if (code) {
+            // 重複スキャン防止
+            const alreadyScanned = playerTeam.some(m => m.id === code.data);
+            if (!alreadyScanned) {
+                addMonsterToTeam(code.data);
+            }
+        }
+    }
+    requestAnimationFrame(tick);
+}
+
+function addMonsterToTeam(data) {
+    // 読み取り成功時のエフェクト（音の代わりに色反転などしたいが省略）
+    const monster = generateMonster(data);
+    playerTeam.push(monster);
+    scanCount++;
+    document.getElementById('scan-count').innerText = scanCount;
+    
+    alert(`「${monster.name}」を読み込んだ！\nタイプ: ${monster.type}\nHP: ${monster.hp}`);
+
+    if (scanCount >= 3) {
+        isScanning = false;
+        video.srcObject.getTracks().forEach(track => track.stop()); // カメラ停止
+        initBattle();
+    }
+}
+
+// デバッグモード（カメラなしでランダム生成）
+function debugMode() {
+    addMonsterToTeam("debug1" + Math.random());
+    addMonsterToTeam("debug2" + Math.random());
+    addMonsterToTeam("debug3" + Math.random());
+}
+
+// === バトルロジック ===
+function initBattle() {
+    document.getElementById('scan-ui').style.display = 'none';
+    document.getElementById('battle-ui').style.display = 'block';
+    
+    // 敵チームの生成（自動）
+    for(let i=0; i<3; i++) {
+        enemyTeam.push(generateMonster("enemy" + i + Math.random())); // ランダムシード
+    }
+    
+    updateBenchUI();
+    updateBattleUI();
+    log("バトル開始！");
+    log(`相手は ${enemyTeam[0].name} などを繰り出してきた！`);
+    
+    document.getElementById('next-btn').style.display = 'inline-block';
+}
+
+function updateBenchUI() {
+    const pBench = document.getElementById('player-bench');
+    const eBench = document.getElementById('enemy-bench');
+    pBench.innerHTML = ""; eBench.innerHTML = "";
+    
+    playerTeam.forEach((m, i) => {
+        pBench.innerHTML += `<div class="bench-icon ${m.hp > 0 ? 'alive' : 'dead'}">${m.emoji}</div>`;
+    });
+    enemyTeam.forEach((m, i) => {
+        eBench.innerHTML += `<div class="bench-icon ${m.hp > 0 ? 'alive' : 'dead'}">${m.emoji}</div>`;
+    });
+}
+
+function updateBattleUI() {
+    const pm = playerTeam[pIndex];
+    const em = enemyTeam[eIndex];
+    
+    // Player UI
+    document.getElementById('p-name').innerText = pm.name;
+    document.getElementById('p-emoji').innerText = pm.emoji;
+    document.getElementById('p-hp-bar').style.width = (pm.hp / pm.maxHp * 100) + "%";
+    
+    // Enemy UI
+    document.getElementById('e-name').innerText = em.name;
+    document.getElementById('e-emoji').innerText = em.emoji;
+    document.getElementById('e-hp-bar').style.width = (em.hp / em.maxHp * 100) + "%";
+}
+
+function log(msg) {
+    const box = document.getElementById('log-box');
+    box.innerHTML += `<div class="log-line">${msg}</div>`;
+    box.scrollTop = box.scrollHeight;
+}
+
+function calcDamage(attacker, defender) {
+    let damage = 0;
+    // 攻撃種類と数値に合わせてダメージ
+    // 式: (攻撃 / 2) - (防御 / 4) + 乱数。最低1ダメージ。
+    if (attacker.type === '物理') {
+        let base = (attacker.kp * 0.8) - (defender.kd * 0.2);
+        damage = Math.floor(base + (Math.random() * 10));
+    } else {
+        let base = (attacker.mp * 0.8) - (defender.md * 0.2);
+        damage = Math.floor(base + (Math.random() * 10));
+    }
+    return Math.max(1, damage);
+}
+
+function nextTurn() {
+    const pm = playerTeam[pIndex];
+    const em = enemyTeam[eIndex];
+    
+    // 勝敗判定済みならリターン
+    if (pIndex >= 3 || eIndex >= 3) return;
+
+    // どちらかが倒れている場合の交代処理
+    if (pm.hp <= 0) {
+        pIndex++;
+        if (pIndex >= 3) { log("<b>あなたの負け...</b>"); document.getElementById('next-btn').disabled = true; return; }
+        log(`ゆけっ！ ${playerTeam[pIndex].name}！`);
+        updateBattleUI();
+        updateBenchUI();
+        return;
+    }
+    if (em.hp <= 0) {
+        eIndex++;
+        if (eIndex >= 3) { log("<b>あなたの勝ち！</b>"); document.getElementById('next-btn').disabled = true; return; }
+        log(`相手は ${enemyTeam[eIndex].name} を繰り出した！`);
+        updateBattleUI();
+        updateBenchUI();
+        return;
+    }
+
+    // 素早さ判定で行動順決定
+    let first = pm.sp >= em.sp ? pm : em;
+    let second = pm.sp >= em.sp ? em : pm;
+    let isPlayerFirst = pm === first;
+
+    // 先攻の攻撃
+    attack(first, second, isPlayerFirst);
+    
+    // 後攻が生きていれば攻撃
+    if (second.hp > 0) {
+        setTimeout(() => {
+            attack(second, first, !isPlayerFirst);
+        }, 1000); // 少し待ってから反撃
+    }
+}
+
+function attack(atk, def, isPlayerAtk) {
+    // アニメーション用クラス付与
+    const atkEl = isPlayerAtk ? document.getElementById('p-card') : document.getElementById('e-card');
+    const defEl = isPlayerAtk ? document.getElementById('e-card') : document.getElementById('p-card');
+    
+    atkEl.classList.add('attack-anim');
+    setTimeout(() => atkEl.classList.remove('attack-anim'), 300);
+
+    const damage = calcDamage(atk, def);
+    def.hp = Math.max(0, def.hp - damage);
+    
+    log(`${atk.name}の${atk.skillName}！ ${def.name}に${damage}のダメージ！`);
+    
+    if (def.hp > 0) {
+        defEl.classList.add('damage-anim');
+        setTimeout(() => defEl.classList.remove('damage-anim'), 500);
+    } else {
+        log(`${def.name}は倒れた！`);
+    }
+    
+    updateBattleUI();
+    updateBenchUI();
+}
+</script>
+</body>
+</html>
