@@ -23,23 +23,20 @@
         
         #game-container { max-width: 600px; margin: 0 auto; padding: 10px; }
         
-        /* カメラエリア (QuaggaJS用調整) */
         #scan-ui { display: none; }
         #camera-area { 
             position: relative; margin: 10px auto; width: 100%; max-width: 320px; height: 240px; 
             background: #000; border-radius: 10px; overflow: hidden; border: 4px solid #333;
         }
-        /* Quaggaがvideoタグをここに挿入します */
         #camera-area video { width: 100%; height: 100%; object-fit: cover; }
-        /* 読み取りガイド線 */
         .scan-guide {
             position: absolute; top: 50%; left: 10%; right: 10%; height: 2px; background: red; 
             z-index: 10; box-shadow: 0 0 4px red; opacity: 0.7;
         }
 
         #scan-instruction { margin-bottom: 10px; font-weight: bold; }
+        #scan-status { font-size: 0.9rem; color: #e91e63; height: 20px; font-weight: bold; }
 
-        /* バトルエリア（前回と同じ） */
         #battle-ui { display: none; }
         .battle-field { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px; height: 200px; background: #fff; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
         
@@ -88,10 +85,10 @@
         <div id="camera-area">
             <div class="scan-guide"></div>
         </div>
+        <div id="scan-status">カメラ起動中...</div>
         <p style="font-size:0.8rem; color:#888;">
-            商品のバーコード（JANコード）を<br>
-            赤い線に合わせてください。<br>
-            <span style="color:red;">※明るい場所で、カメラを近づけすぎずに！</span>
+            バーコードを赤い線に合わせてください。<br>
+            ※読み取ったら画面がフラッシュします
         </p>
     </div>
 
@@ -115,7 +112,7 @@
     </div>
     
     <div id="start-screen">
-        <p>身の回りのバーコードをスキャンして<br>最強のチームを作ろう！<br>(お菓子、本、文房具など)</p>
+        <p>身の回りのバーコードをスキャンして<br>最強のチームを作ろう！</p>
         <button onclick="startScanning()">カメラを起動してスタート</button>
         <br><br>
         <button onclick="debugMode()" style="background:#888; font-size:0.8rem;">(カメラなしでテストプレイ)</button>
@@ -133,6 +130,7 @@ let enemyTeam = [];
 let pIndex = 0;
 let eIndex = 0;
 let scanCount = 0;
+let isProcessing = false; // 連続読み込み防止フラグ
 
 // === ユーティリティ ===
 function hashString(str) {
@@ -156,7 +154,6 @@ class Random {
 
 // === モンスター生成 ===
 function generateMonster(barcodeData) {
-    // バーコードの数字を元にシード生成
     const seed = hashString(String(barcodeData));
     const rng = new Random(seed);
     
@@ -190,7 +187,7 @@ function generateMonster(barcodeData) {
     };
 }
 
-// === バーコードスキャン処理 (QuaggaJS) ===
+// === バーコードスキャン処理 (修正版) ===
 function startScanning() {
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('scan-ui').style.display = 'block';
@@ -201,37 +198,45 @@ function startScanning() {
             type : "LiveStream",
             target: document.querySelector('#camera-area'),
             constraints: {
-                facingMode: "environment", // 背面カメラ
+                facingMode: "environment",
                 width: 640,
                 height: 480
             }
         },
         decoder : {
-            // 日本の一般的なバーコード(JAN/EAN)に対応
             readers : ["ean_reader", "ean_8_reader"]
         }
     }, function(err) {
         if (err) {
             console.log(err);
-            alert("カメラの起動に失敗しました。\nhttps接続か確認してください。");
+            alert("カメラの起動に失敗しました。");
             return;
         }
         Quagga.start();
+        document.getElementById('scan-status').innerText = "スキャン待機中...";
     });
 
     Quagga.onDetected(function(result) {
+        // すでに処理中なら無視（連射防止）
+        if (isProcessing) return;
+
         const code = result.codeResult.code;
-        
-        // 誤検知を防ぐため、簡易チェック（数値のみか）
         if(!code || !code.match(/^[0-9]+$/)) return;
 
-        // 重複スキャン防止
         const alreadyScanned = playerTeam.some(m => m.id === code);
-        if (!alreadyScanned) {
-            // 読み取り成功時、一時停止してアラート
-            Quagga.stop(); 
-            addMonsterToTeam(code);
+        if (alreadyScanned) {
+            document.getElementById('scan-status').innerText = "そのコードは登録済みです！";
+            return;
         }
+
+        // --- 読み取り成功時の処理 ---
+        isProcessing = true; // ロックをかける
+        document.getElementById('camera-area').style.border = "4px solid #00FF00"; // 成功サイン
+        
+        // 少し待ってからアラート（画面の描画更新のため）
+        setTimeout(() => {
+            addMonsterToTeam(code);
+        }, 200);
     });
 }
 
@@ -241,24 +246,28 @@ function addMonsterToTeam(data) {
     scanCount++;
     document.getElementById('scan-count').innerText = scanCount;
     
-    alert(`読み取り成功！\nコード: ${data}\n\n「${monster.name}」が現れた！\n(HP: ${monster.hp} / 攻撃: ${monster.type})`);
+    alert(`読み取り成功！\n${monster.name} (HP:${monster.hp}) をゲット！`);
+    
+    document.getElementById('camera-area').style.border = "4px solid #333"; // 枠線を戻す
 
     if (scanCount >= 3) {
+        Quagga.stop(); // 3体揃ったら初めてカメラを止める
         initBattle();
     } else {
-        // まだ3体いなければカメラ再開
-        Quagga.start();
+        // 次の読み取りのためにロックを解除
+        isProcessing = false;
+        document.getElementById('scan-status').innerText = "次のバーコードをどうぞ！";
     }
 }
 
 // デバッグモード
 function debugMode() {
-    addMonsterToTeam("4901234567890"); // ランダムなJANコード風
+    addMonsterToTeam("4901234567890"); 
     addMonsterToTeam("4501234567891");
     addMonsterToTeam("4909999999999");
 }
 
-// === バトルロジック (前回と同じ) ===
+// === バトルロジック ===
 function initBattle() {
     document.getElementById('scan-ui').style.display = 'none';
     document.getElementById('battle-ui').style.display = 'block';
