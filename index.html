@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Barcode Monster Battle</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
     <style>
@@ -12,17 +12,20 @@
             --bg-color: #FFF5F5;
         }
         body {
-            font-family: "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; /* iOS向けフォント指定 */
             background-color: var(--bg-color);
             color: #444;
             text-align: center;
             margin: 0; padding: 0;
             overflow-x: hidden;
+            -webkit-touch-callout: none; /* iOS長押しメニュー抑制 */
+            user-select: none;
         }
         h1 { margin: 10px 0; font-size: 1.2rem; color: #FF6F61; }
         
         #game-container { max-width: 600px; margin: 0 auto; padding: 10px; }
         
+        /* カメラエリア */
         #scan-ui { display: none; }
         #camera-area { 
             position: relative; margin: 10px auto; width: 100%; max-width: 320px; height: 240px; 
@@ -34,16 +37,27 @@
             z-index: 10; box-shadow: 0 0 4px red; opacity: 0.7;
         }
 
-        #scan-instruction { margin-bottom: 10px; font-weight: bold; }
-        #scan-status { font-size: 0.9rem; color: #e91e63; height: 20px; font-weight: bold; }
+        /* 独自モーダル（alertの代わり） */
+        #custom-modal {
+            display: none;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 100;
+            justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 15px; width: 80%; max-width: 300px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: popUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+        @keyframes popUp { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
+        /* バトルエリア */
         #battle-ui { display: none; }
-        .battle-field { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px; height: 200px; background: #fff; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
+        .battle-field { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px; height: 180px; background: #fff; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
         
         .monster-card { width: 45%; text-align: center; transition: all 0.3s; }
-        .monster-emoji { font-size: 4rem; display: block; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.2)); }
-        .monster-name { font-weight: bold; font-size: 0.9rem; margin-top: 5px; display: block; }
-        .hp-bar-container { width: 100%; height: 10px; background: #ddd; border-radius: 5px; margin-top: 5px; overflow: hidden; }
+        .monster-emoji { font-size: 3.5rem; display: block; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.2)); }
+        .monster-name { font-weight: bold; font-size: 0.8rem; margin-top: 5px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .hp-bar-container { width: 100%; height: 8px; background: #ddd; border-radius: 4px; margin-top: 5px; overflow: hidden; }
         .hp-bar { height: 100%; width: 100%; transition: width 0.5s; }
         
         .player .hp-bar { background: var(--p-color); }
@@ -51,23 +65,26 @@
         .enemy .hp-bar { background: var(--e-color); }
         
         #log-box { 
-            height: 150px; overflow-y: scroll; 
+            height: 120px; overflow-y: scroll; 
             background: #fff; border: 2px solid #eee; 
-            border-radius: 10px; padding: 10px; text-align: left; font-size: 0.9rem; 
+            border-radius: 10px; padding: 10px; text-align: left; font-size: 0.85rem; 
             margin-bottom: 10px;
+            -webkit-overflow-scrolling: touch; /* iOSスクロール滑らかに */
         }
         .log-line { margin-bottom: 4px; border-bottom: 1px dashed #eee; padding-bottom: 2px; }
         
-        .bench { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+        .bench { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; height: 40px; }
         .bench-icon { font-size: 1.5rem; opacity: 0.5; }
         .bench-icon.alive { opacity: 1; }
         .bench-icon.dead { opacity: 0.2; filter: grayscale(100%); }
 
         button {
-            background: #FF6F61; color: white; border: none; padding: 10px 20px;
-            font-size: 1rem; border-radius: 20px; cursor: pointer; margin-top: 10px;
+            background: #FF6F61; color: white; border: none; padding: 12px 24px;
+            font-size: 1rem; border-radius: 25px; cursor: pointer; margin-top: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        button:disabled { background: #ccc; }
+        button:active { transform: translateY(2px); box-shadow: 0 2px 3px rgba(0,0,0,0.1); }
+        button:disabled { background: #ccc; box-shadow: none; }
 
         .damage-anim { animation: shake 0.5s; }
         .attack-anim { animation: lunge 0.3s; }
@@ -85,11 +102,19 @@
         <div id="camera-area">
             <div class="scan-guide"></div>
         </div>
-        <div id="scan-status">カメラ起動中...</div>
         <p style="font-size:0.8rem; color:#888;">
             バーコードを赤い線に合わせてください。<br>
-            ※読み取ったら画面がフラッシュします
+            ※iPhoneは少し離すと読みやすいです
         </p>
+    </div>
+
+    <div id="custom-modal">
+        <div class="modal-content">
+            <h2 style="margin-top:0; color:#FF6F61;">GET!</h2>
+            <div id="modal-emoji" style="font-size:4rem;"></div>
+            <div id="modal-text" style="font-weight:bold; margin:10px 0;"></div>
+            <button onclick="closeModal()">次へ</button>
+        </div>
     </div>
 
     <div id="battle-ui">
@@ -108,7 +133,7 @@
         </div>
         <div class="bench" id="player-bench"></div>
         <div id="log-box"></div>
-        <button id="next-btn" onclick="nextTurn()" style="display:none;">次へ</button>
+        <button id="next-btn" onclick="nextTurn()" style="display:none;">攻撃！</button>
     </div>
     
     <div id="start-screen">
@@ -130,7 +155,7 @@ let enemyTeam = [];
 let pIndex = 0;
 let eIndex = 0;
 let scanCount = 0;
-let isProcessing = false; // 連続読み込み防止フラグ
+let isProcessing = false;
 
 // === ユーティリティ ===
 function hashString(str) {
@@ -187,7 +212,7 @@ function generateMonster(barcodeData) {
     };
 }
 
-// === バーコードスキャン処理 (修正版) ===
+// === バーコードスキャン処理 (iPhone対応版) ===
 function startScanning() {
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('scan-ui').style.display = 'block';
@@ -198,14 +223,15 @@ function startScanning() {
             type : "LiveStream",
             target: document.querySelector('#camera-area'),
             constraints: {
-                facingMode: "environment",
-                width: 640,
-                height: 480
+                facingMode: "environment", // 背面カメラ
+                width: 480, // iPhoneでは解像度を少し落としたほうが安定する
+                height: 320
             }
         },
         decoder : {
             readers : ["ean_reader", "ean_8_reader"]
-        }
+        },
+        locate: true // 読み取り精度向上
     }, function(err) {
         if (err) {
             console.log(err);
@@ -213,11 +239,9 @@ function startScanning() {
             return;
         }
         Quagga.start();
-        document.getElementById('scan-status').innerText = "スキャン待機中...";
     });
 
     Quagga.onDetected(function(result) {
-        // すでに処理中なら無視（連射防止）
         if (isProcessing) return;
 
         const code = result.codeResult.code;
@@ -225,18 +249,22 @@ function startScanning() {
 
         const alreadyScanned = playerTeam.some(m => m.id === code);
         if (alreadyScanned) {
-            document.getElementById('scan-status').innerText = "そのコードは登録済みです！";
+            // 既に登録済みなら少し待ってから再度検知可能にする
+            isProcessing = true;
+            document.getElementById('camera-area').style.border = "4px solid orange";
+            setTimeout(() => { 
+                document.getElementById('camera-area').style.border = "4px solid #333";
+                isProcessing = false; 
+            }, 1000);
             return;
         }
 
-        // --- 読み取り成功時の処理 ---
-        isProcessing = true; // ロックをかける
-        document.getElementById('camera-area').style.border = "4px solid #00FF00"; // 成功サイン
+        // --- 読み取り成功 ---
+        isProcessing = true;
+        document.getElementById('camera-area').style.border = "4px solid #00FF00";
         
-        // 少し待ってからアラート（画面の描画更新のため）
-        setTimeout(() => {
-            addMonsterToTeam(code);
-        }, 200);
+        // モンスター生成してモーダル表示
+        addMonsterToTeam(code);
     });
 }
 
@@ -245,26 +273,36 @@ function addMonsterToTeam(data) {
     playerTeam.push(monster);
     scanCount++;
     document.getElementById('scan-count').innerText = scanCount;
-    
-    alert(`読み取り成功！\n${monster.name} (HP:${monster.hp}) をゲット！`);
-    
-    document.getElementById('camera-area').style.border = "4px solid #333"; // 枠線を戻す
 
+    // alertの代わりにモーダルを表示
+    document.getElementById('modal-emoji').innerText = monster.emoji;
+    document.getElementById('modal-text').innerHTML = `${monster.name}<br>HP:${monster.hp} / ${monster.type}`;
+    document.getElementById('custom-modal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('custom-modal').style.display = 'none';
+    document.getElementById('camera-area').style.border = "4px solid #333";
+    
     if (scanCount >= 3) {
-        Quagga.stop(); // 3体揃ったら初めてカメラを止める
+        Quagga.stop();
         initBattle();
     } else {
-        // 次の読み取りのためにロックを解除
+        // iPhone対策: 明示的にビデオを再生し直す
+        const video = document.querySelector('video');
+        if (video) video.play();
         isProcessing = false;
-        document.getElementById('scan-status').innerText = "次のバーコードをどうぞ！";
     }
 }
 
 // デバッグモード
 function debugMode() {
     addMonsterToTeam("4901234567890"); 
+    closeModal(); // モーダルを閉じる処理もシミュレート
     addMonsterToTeam("4501234567891");
+    closeModal();
     addMonsterToTeam("4909999999999");
+    closeModal();
 }
 
 // === バトルロジック ===
