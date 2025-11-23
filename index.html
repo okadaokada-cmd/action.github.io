@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR Monster Battle</title>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <title>Barcode Monster Battle</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
     <style>
         :root {
-            --p-color: #FF9AA2; /* Player Color */
-            --e-color: #85E3FF; /* Enemy Color */
+            --p-color: #FF9AA2;
+            --e-color: #85E3FF;
             --bg-color: #FFF5F5;
         }
         body {
@@ -16,22 +16,30 @@
             background-color: var(--bg-color);
             color: #444;
             text-align: center;
-            margin: 0;
-            padding: 0;
+            margin: 0; padding: 0;
             overflow-x: hidden;
         }
         h1 { margin: 10px 0; font-size: 1.2rem; color: #FF6F61; }
         
-        /* レイアウト */
         #game-container { max-width: 600px; margin: 0 auto; padding: 10px; }
         
-        /* カメラエリア */
+        /* カメラエリア (QuaggaJS用調整) */
         #scan-ui { display: none; }
-        #canvas-container { position: relative; margin: 10px auto; width: 300px; height: 300px; background: #000; border-radius: 10px; overflow: hidden; }
-        canvas { width: 100%; height: 100%; }
+        #camera-area { 
+            position: relative; margin: 10px auto; width: 100%; max-width: 320px; height: 240px; 
+            background: #000; border-radius: 10px; overflow: hidden; border: 4px solid #333;
+        }
+        /* Quaggaがvideoタグをここに挿入します */
+        #camera-area video { width: 100%; height: 100%; object-fit: cover; }
+        /* 読み取りガイド線 */
+        .scan-guide {
+            position: absolute; top: 50%; left: 10%; right: 10%; height: 2px; background: red; 
+            z-index: 10; box-shadow: 0 0 4px red; opacity: 0.7;
+        }
+
         #scan-instruction { margin-bottom: 10px; font-weight: bold; }
 
-        /* バトルエリア */
+        /* バトルエリア（前回と同じ） */
         #battle-ui { display: none; }
         .battle-field { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px; height: 200px; background: #fff; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
         
@@ -41,17 +49,10 @@
         .hp-bar-container { width: 100%; height: 10px; background: #ddd; border-radius: 5px; margin-top: 5px; overflow: hidden; }
         .hp-bar { height: 100%; width: 100%; transition: width 0.5s; }
         
-        /* プレイヤー側 */
         .player .hp-bar { background: var(--p-color); }
-        .player .monster-emoji { transform: scaleX(-1); } /* プレイヤーは右向き */
-
-        /* 敵側 */
+        .player .monster-emoji { transform: scaleX(-1); }
         .enemy .hp-bar { background: var(--e-color); }
         
-        /* ステータス表示 */
-        .stats-box { font-size: 0.8rem; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 5px; margin-top: 5px; display: none; }
-
-        /* メッセージログ */
         #log-box { 
             height: 150px; overflow-y: scroll; 
             background: #fff; border: 2px solid #eee; 
@@ -60,7 +61,6 @@
         }
         .log-line { margin-bottom: 4px; border-bottom: 1px dashed #eee; padding-bottom: 2px; }
         
-        /* 控えモンスター */
         .bench { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
         .bench-icon { font-size: 1.5rem; opacity: 0.5; }
         .bench-icon.alive { opacity: 1; }
@@ -72,7 +72,6 @@
         }
         button:disabled { background: #ccc; }
 
-        /* アニメーション */
         .damage-anim { animation: shake 0.5s; }
         .attack-anim { animation: lunge 0.3s; }
         @keyframes shake { 0% { transform: translateX(0); } 25% { transform: translateX(5px); } 75% { transform: translateX(-5px); } 100% { transform: translateX(0); } }
@@ -82,43 +81,41 @@
 <body>
 
 <div id="game-container">
-    <h1>QR Monster Battle</h1>
+    <h1>Barcode Monster Battle</h1>
 
     <div id="scan-ui">
-        <div id="scan-instruction">モンスターをスキャン中... (<span id="scan-count">0</span>/3)</div>
-        <div id="canvas-container">
-            <canvas id="qr-canvas"></canvas>
+        <div id="scan-instruction">バーコードをスキャン中... (<span id="scan-count">0</span>/3)</div>
+        <div id="camera-area">
+            <div class="scan-guide"></div>
         </div>
-        <p style="font-size:0.8rem; color:#888;">カメラにQRコードをかざしてください。<br>バーコードも読み取れる場合があります。</p>
+        <p style="font-size:0.8rem; color:#888;">
+            商品のバーコード（JANコード）を<br>
+            赤い線に合わせてください。<br>
+            <span style="color:red;">※明るい場所で、カメラを近づけすぎずに！</span>
+        </p>
     </div>
 
     <div id="battle-ui">
         <div class="bench" id="enemy-bench"></div>
-        
         <div class="battle-field">
             <div class="monster-card player" id="p-card">
                 <span class="monster-name" id="p-name">Monster</span>
                 <div class="hp-bar-container"><div class="hp-bar" id="p-hp-bar"></div></div>
                 <span class="monster-emoji" id="p-emoji">🐣</span>
-                <div class="stats-box" id="p-stats"></div>
             </div>
             <div class="monster-card enemy" id="e-card">
                 <span class="monster-name" id="e-name">Monster</span>
                 <div class="hp-bar-container"><div class="hp-bar" id="e-hp-bar"></div></div>
                 <span class="monster-emoji" id="e-emoji">👾</span>
-                <div class="stats-box" id="e-stats"></div>
             </div>
         </div>
-
         <div class="bench" id="player-bench"></div>
-
         <div id="log-box"></div>
-
         <button id="next-btn" onclick="nextTurn()" style="display:none;">次へ</button>
     </div>
     
     <div id="start-screen">
-        <p>QRコードから可愛いモンスターを召喚して<br>3vs3のバトルをしよう！</p>
+        <p>身の回りのバーコードをスキャンして<br>最強のチームを作ろう！<br>(お菓子、本、文房具など)</p>
         <button onclick="startScanning()">カメラを起動してスタート</button>
         <br><br>
         <button onclick="debugMode()" style="background:#888; font-size:0.8rem;">(カメラなしでテストプレイ)</button>
@@ -126,22 +123,18 @@
 </div>
 
 <script>
-// === ゲームデータと設定 ===
-const EMOJIS = ['🐲', '👻', '🧚', '🤖', '🐣', '🐱', '🦊', '🦄', '🦋', '🐢', '🐙', '🌵', '🍄'];
-const PREFIXES = ['プニ', 'モコ', 'ピコ', 'ドラ', 'メガ', 'ウル', 'ハピ', 'ダーク', 'メカ', 'フワ'];
-const SUFFIXES = ['モン', 'ちゃん', 'ゴン', 'ピー', 'タ', 'ロ', 'ナ', 'マン', 'キング'];
+// === ゲームデータ ===
+const EMOJIS = ['🐲', '👻', '🧚', '🤖', '🐣', '🐱', '🦊', '🦄', '🦋', '🐢', '🐙', '🌵', '🍄', '🍟', '🍫', '🥤'];
+const PREFIXES = ['プニ', 'モコ', 'ピコ', 'ドラ', 'メガ', 'ウル', 'ハピ', 'ダーク', 'メカ', 'フワ', 'スーパー'];
+const SUFFIXES = ['モン', 'ちゃん', 'ゴン', 'ピー', 'タ', 'ロ', 'ナ', 'マン', 'キング', 'バトラー'];
 
 let playerTeam = [];
 let enemyTeam = [];
 let pIndex = 0;
 let eIndex = 0;
 let scanCount = 0;
-let isScanning = false;
-let video = document.createElement("video");
-let canvasElement = document.getElementById("qr-canvas");
-let canvas = canvasElement.getContext("2d");
 
-// === ユーティリティ: 文字列から数値を生成 ===
+// === ユーティリティ ===
 function hashString(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -151,7 +144,6 @@ function hashString(str) {
     return Math.abs(hash);
 }
 
-// 乱数生成器 (シード付き)
 class Random {
     constructor(seed) { this.seed = seed; }
     next() {
@@ -163,116 +155,122 @@ class Random {
 }
 
 // === モンスター生成 ===
-function generateMonster(qrData) {
-    const seed = hashString(qrData);
+function generateMonster(barcodeData) {
+    // バーコードの数字を元にシード生成
+    const seed = hashString(String(barcodeData));
     const rng = new Random(seed);
     
     const type = rng.next() > 0.5 ? '物理' : '特殊';
     const emoji = rng.pick(EMOJIS);
     const name = rng.pick(PREFIXES) + rng.pick(SUFFIXES);
     
-    // ステータス生成 (合計値をある程度一定にするが個性を出す)
-    const hp = rng.range(80, 150);
+    const hp = rng.range(90, 160);
     let kp, kd, mp, md, sp;
     
     if (type === '物理') {
-        kp = rng.range(40, 80); mp = rng.range(10, 30);
-        kd = rng.range(30, 60); md = rng.range(20, 50);
+        kp = rng.range(50, 90); mp = rng.range(10, 30);
+        kd = rng.range(40, 70); md = rng.range(20, 50);
         skill = "たいあたり";
     } else {
-        kp = rng.range(10, 30); mp = rng.range(40, 80);
-        kd = rng.range(20, 50); md = rng.range(30, 60);
+        kp = rng.range(10, 30); mp = rng.range(50, 90);
+        kd = rng.range(20, 50); md = rng.range(40, 70);
         skill = "ビーム";
     }
-    sp = rng.range(30, 90);
+    sp = rng.range(40, 100);
 
-    // 技名ランダム化
-    const physSkills = ["パンチ", "キック", "頭突き", "スラッシュ"];
-    const specSkills = ["ファイア", "サンダー", "ビーム", "念力"];
+    const physSkills = ["バーコード斬り", "スキャンアタック", "箱カド攻撃", "体当たり"];
+    const specSkills = ["レーザービーム", "データドレイン", "電子パルス", "念力"];
     const skillName = type === '物理' ? rng.pick(physSkills) : rng.pick(specSkills);
 
     return {
         name, emoji, hp, maxHp: hp,
         kp, kd, mp, md, sp,
         type, skillName,
-        id: qrData // デバッグ用
+        id: barcodeData
     };
 }
 
-// === スキャン処理 ===
+// === バーコードスキャン処理 (QuaggaJS) ===
 function startScanning() {
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('scan-ui').style.display = 'block';
-    isScanning = true;
-    
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
-        video.srcObject = stream;
-        video.setAttribute("playsinline", true); 
-        video.play();
-        requestAnimationFrame(tick);
+
+    Quagga.init({
+        inputStream : {
+            name : "Live",
+            type : "LiveStream",
+            target: document.querySelector('#camera-area'),
+            constraints: {
+                facingMode: "environment", // 背面カメラ
+                width: 640,
+                height: 480
+            }
+        },
+        decoder : {
+            // 日本の一般的なバーコード(JAN/EAN)に対応
+            readers : ["ean_reader", "ean_8_reader"]
+        }
+    }, function(err) {
+        if (err) {
+            console.log(err);
+            alert("カメラの起動に失敗しました。\nhttps接続か確認してください。");
+            return;
+        }
+        Quagga.start();
+    });
+
+    Quagga.onDetected(function(result) {
+        const code = result.codeResult.code;
+        
+        // 誤検知を防ぐため、簡易チェック（数値のみか）
+        if(!code || !code.match(/^[0-9]+$/)) return;
+
+        // 重複スキャン防止
+        const alreadyScanned = playerTeam.some(m => m.id === code);
+        if (!alreadyScanned) {
+            // 読み取り成功時、一時停止してアラート
+            Quagga.stop(); 
+            addMonsterToTeam(code);
+        }
     });
 }
 
-function tick() {
-    if (!isScanning) return;
-    
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvasElement.height = video.videoHeight;
-        canvasElement.width = video.videoWidth;
-        canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
-        
-        var imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-        var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
-        
-        if (code) {
-            // 重複スキャン防止
-            const alreadyScanned = playerTeam.some(m => m.id === code.data);
-            if (!alreadyScanned) {
-                addMonsterToTeam(code.data);
-            }
-        }
-    }
-    requestAnimationFrame(tick);
-}
-
 function addMonsterToTeam(data) {
-    // 読み取り成功時のエフェクト（音の代わりに色反転などしたいが省略）
     const monster = generateMonster(data);
     playerTeam.push(monster);
     scanCount++;
     document.getElementById('scan-count').innerText = scanCount;
     
-    alert(`「${monster.name}」を読み込んだ！\nタイプ: ${monster.type}\nHP: ${monster.hp}`);
+    alert(`読み取り成功！\nコード: ${data}\n\n「${monster.name}」が現れた！\n(HP: ${monster.hp} / 攻撃: ${monster.type})`);
 
     if (scanCount >= 3) {
-        isScanning = false;
-        video.srcObject.getTracks().forEach(track => track.stop()); // カメラ停止
         initBattle();
+    } else {
+        // まだ3体いなければカメラ再開
+        Quagga.start();
     }
 }
 
-// デバッグモード（カメラなしでランダム生成）
+// デバッグモード
 function debugMode() {
-    addMonsterToTeam("debug1" + Math.random());
-    addMonsterToTeam("debug2" + Math.random());
-    addMonsterToTeam("debug3" + Math.random());
+    addMonsterToTeam("4901234567890"); // ランダムなJANコード風
+    addMonsterToTeam("4501234567891");
+    addMonsterToTeam("4909999999999");
 }
 
-// === バトルロジック ===
+// === バトルロジック (前回と同じ) ===
 function initBattle() {
     document.getElementById('scan-ui').style.display = 'none';
     document.getElementById('battle-ui').style.display = 'block';
     
-    // 敵チームの生成（自動）
     for(let i=0; i<3; i++) {
-        enemyTeam.push(generateMonster("enemy" + i + Math.random())); // ランダムシード
+        enemyTeam.push(generateMonster("enemy" + i + Math.random()));
     }
     
     updateBenchUI();
     updateBattleUI();
     log("バトル開始！");
     log(`相手は ${enemyTeam[0].name} などを繰り出してきた！`);
-    
     document.getElementById('next-btn').style.display = 'inline-block';
 }
 
@@ -293,12 +291,10 @@ function updateBattleUI() {
     const pm = playerTeam[pIndex];
     const em = enemyTeam[eIndex];
     
-    // Player UI
     document.getElementById('p-name').innerText = pm.name;
     document.getElementById('p-emoji').innerText = pm.emoji;
     document.getElementById('p-hp-bar').style.width = (pm.hp / pm.maxHp * 100) + "%";
     
-    // Enemy UI
     document.getElementById('e-name').innerText = em.name;
     document.getElementById('e-emoji').innerText = em.emoji;
     document.getElementById('e-hp-bar').style.width = (em.hp / em.maxHp * 100) + "%";
@@ -312,8 +308,6 @@ function log(msg) {
 
 function calcDamage(attacker, defender) {
     let damage = 0;
-    // 攻撃種類と数値に合わせてダメージ
-    // 式: (攻撃 / 2) - (防御 / 4) + 乱数。最低1ダメージ。
     if (attacker.type === '物理') {
         let base = (attacker.kp * 0.8) - (defender.kd * 0.2);
         damage = Math.floor(base + (Math.random() * 10));
@@ -328,10 +322,8 @@ function nextTurn() {
     const pm = playerTeam[pIndex];
     const em = enemyTeam[eIndex];
     
-    // 勝敗判定済みならリターン
     if (pIndex >= 3 || eIndex >= 3) return;
 
-    // どちらかが倒れている場合の交代処理
     if (pm.hp <= 0) {
         pIndex++;
         if (pIndex >= 3) { log("<b>あなたの負け...</b>"); document.getElementById('next-btn').disabled = true; return; }
@@ -349,24 +341,20 @@ function nextTurn() {
         return;
     }
 
-    // 素早さ判定で行動順決定
     let first = pm.sp >= em.sp ? pm : em;
     let second = pm.sp >= em.sp ? em : pm;
     let isPlayerFirst = pm === first;
 
-    // 先攻の攻撃
     attack(first, second, isPlayerFirst);
     
-    // 後攻が生きていれば攻撃
     if (second.hp > 0) {
         setTimeout(() => {
             attack(second, first, !isPlayerFirst);
-        }, 1000); // 少し待ってから反撃
+        }, 1000);
     }
 }
 
 function attack(atk, def, isPlayerAtk) {
-    // アニメーション用クラス付与
     const atkEl = isPlayerAtk ? document.getElementById('p-card') : document.getElementById('e-card');
     const defEl = isPlayerAtk ? document.getElementById('e-card') : document.getElementById('p-card');
     
